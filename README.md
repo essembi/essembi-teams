@@ -1,2 +1,2 @@
 # essembi-teams
-Microsoft Teams integration for ESsembi
+Microsoft Teams integration for Essembi
