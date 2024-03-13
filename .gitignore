@@ -1,0 +1,7 @@
+/.vs
+/bin
+/obj
+/AppManifest/*.zip
+/AppManifest/manifest.json
+/appsettings.json
+*.user
