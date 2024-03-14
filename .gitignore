@@ -5,3 +5,5 @@
 /AppManifest/manifest.json
 /appsettings.json
 *.user
+/Properties/PublishProfiles
+/Properties/ServiceDependencies/essembi-teams-bot - Web Deploy
