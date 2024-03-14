@@ -12,9 +12,27 @@ namespace Essembi.Integrations.Teams
 {
     public class Startup
     {
+        static string _overrideServiceBaseUrl;
+        public static string ServiceBaseUrl
+        {
+            get
+            {
+#if DEBUG
+                const string serviceBaseUrl = "https://localhost:7198";
+#else
+                const string serviceBaseUrl = "https://api.essembi.ai";
+#endif
+
+                return string.IsNullOrEmpty(_overrideServiceBaseUrl) ? serviceBaseUrl : _overrideServiceBaseUrl;
+            }
+        }
+
         public Startup(IConfiguration configuration)
         {
             Configuration = configuration;
+
+            _overrideServiceBaseUrl = configuration["ServiceBaseUrl"];
+
         }
 
         public IConfiguration Configuration { get; }
@@ -32,7 +50,7 @@ namespace Essembi.Integrations.Teams
             {
                 options.SerializerSettings.MaxDepth = HttpHelper.BotMessageSerializerSettings.MaxDepth;
             });
-            services.AddRazorPages();
+            services.AddRazorPages(c => c.RootDirectory = "/wwwroot").AddRazorPagesOptions(c => { });
 
             //-- Create the Bot Framework Authentication to be used with the Bot Adapter.
             services.AddSingleton<BotFrameworkAuthentication, ConfigurationBotFrameworkAuthentication>();
@@ -48,7 +66,11 @@ namespace Essembi.Integrations.Teams
             services.AddTransient<IBot, TeamsMessagingExtensionsActionBot>();
         }
 
-        // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
+        /// <summary>
+        /// Configures the specified application.
+        /// </summary>
+        /// <param name="app">The application.</param>
+        /// <param name="env">The env.</param>
         public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
         {
             if (env.IsDevelopment())
@@ -69,7 +91,6 @@ namespace Essembi.Integrations.Teams
                 //-- Mapping of endpoints goes here:
                 endpoints.MapControllers();
             });
-
         }
     }
 }

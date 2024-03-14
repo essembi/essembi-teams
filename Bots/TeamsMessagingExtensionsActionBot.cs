@@ -18,20 +18,13 @@ namespace Essembi.Integrations.Teams.Bots
 {
     public class TeamsMessagingExtensionsActionBot : TeamsActivityHandler
     {
-        readonly string _baseUrl;
         readonly string _teamsKey;
         readonly UserState _userState;
-
-#if DEBUG
-        const string ServiceBaseUrl = "https://localhost:7198";
-#else
-        const string ServiceBaseUrl = "https://api.essembi.ai";
-#endif
 
         public TeamsMessagingExtensionsActionBot(IConfiguration configuration, UserState userState) 
             : base()
         {
-            _baseUrl = configuration["BaseUrl"];
+
             _teamsKey = configuration["TeamsIntegrationKey"];
             _userState = userState;
         }
@@ -393,7 +386,7 @@ namespace Essembi.Integrations.Teams.Bots
         RestClient MakeRequest(string path, out RestRequest request)
         {
             //-- Get the web service URL.
-            var serviceUrl = $"{ServiceBaseUrl}/{path}";
+            var serviceUrl = $"{Startup.ServiceBaseUrl}/{path}";
 
             //-- Instantiate the request.
             var options = new RestClientOptions(serviceUrl)

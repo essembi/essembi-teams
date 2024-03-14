@@ -1,4 +1,9 @@
-﻿<!DOCTYPE html>
+﻿@page "/"
+@model Essembi.Integrations.Teams.IndexModel
+@{
+}
+
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -9,6 +14,7 @@
         {
             font-family: sans-serif;
             display: flex;
+            flex-direction: column;
             justify-content: center;
             align-items: center;
             min-height: 100vh;
@@ -24,5 +30,6 @@
 </head>
 <body>
     <h1>Essembi Teams API is ready.</h1>
+    <p>Current API Endpoint: @Essembi.Integrations.Teams.Startup.ServiceBaseUrl</p>
 </body>
 </html>
