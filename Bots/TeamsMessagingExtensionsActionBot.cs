@@ -136,7 +136,7 @@ namespace Essembi.Integrations.Teams.Bots
                 Tap = new CardAction
                 {
                     Type = ActionTypes.OpenUrl,
-                    Title = "View Ticket",
+                    Title = "View Ticket in Essembi",
                     Value = successMessage.Url
                 },
                 Buttons = new List<CardAction>
@@ -144,7 +144,7 @@ namespace Essembi.Integrations.Teams.Bots
                     new CardAction
                     {
                         Type = ActionTypes.OpenUrl,
-                        Title = "View Ticket",
+                        Title = "View Ticket in Essembi",
                         Value = successMessage.Url
                     }
                 }
@@ -340,6 +340,76 @@ namespace Essembi.Integrations.Teams.Bots
                     },
                 },
             };
+        }
+
+        async Task SendWelcomeCard(ITurnContext turnContext, CancellationToken cancellationToken)
+        {
+            var adaptiveCard = new AdaptiveCard("1.0")
+            {
+                Body = new List<AdaptiveElement>()
+                {
+                    new AdaptiveTextBlock
+                    {
+                        Text = "Hello!",
+                        Weight = AdaptiveTextWeight.Bolder,
+                        Size = AdaptiveTextSize.Large,
+                    },
+                    new AdaptiveTextBlock
+                    {
+                        Text = "I am Essembi for Microsoft Teams. I can create tickets for you in Essembi easily from Teams chats and channels.",
+                        Wrap = true
+                    },
+                    new AdaptiveTextBlock
+                    {
+                        Text = "I can be found under the 'actions and apps' button when composing new messages and under the 'more actions' menu on existing messages.",
+                        Wrap = true
+                    },
+                    new AdaptiveTextBlock
+                    {
+                        Text = "To use Essembi for Microsoft Teams, be sure to enable the the integration in Essembi. For more information on this, see our documentation on essembi.com.",
+                        Wrap = true
+                    }
+                },
+                Actions = new List<AdaptiveAction>()
+                {
+                    new AdaptiveOpenUrlAction
+                    {
+                        Title = "Learn more on essembi.com",
+                        Url = new Uri("https://essembi.com/blogs/help/microsoft-teams-integration")
+                    }
+                }
+            };
+
+            var attachment = new Attachment
+            {
+                ContentType = "application/vnd.microsoft.card.adaptive",
+                Content = adaptiveCard
+            };
+
+            await turnContext.SendActivityAsync(MessageFactory.Attachment(attachment), cancellationToken);
+        }
+
+        protected override async Task OnMessageActivityAsync(ITurnContext<IMessageActivity> turnContext, CancellationToken cancellationToken)
+        {
+            //-- Only respond if the bot is sent the message directly.
+            if (turnContext.Activity.Conversation.IsGroup == true)
+            {
+                return;
+            }
+
+            //-- Greet the user and share the documentation with them.
+            await SendWelcomeCard(turnContext, cancellationToken);
+        }
+
+        protected override async Task OnMembersAddedAsync(IList<ChannelAccount> membersAdded, ITurnContext<IConversationUpdateActivity> turnContext, CancellationToken cancellationToken)
+        {
+            foreach (var member in turnContext.Activity.MembersAdded)
+            {
+                if (member.Id != turnContext.Activity.Recipient.Id)
+                {
+                    await SendWelcomeCard(turnContext, cancellationToken);
+                }
+            }
         }
 
         #region Utility Functions
