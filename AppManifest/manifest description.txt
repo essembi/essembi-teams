@@ -1,0 +1,15 @@
+Essembi is your all-in-one solution for building better software, faster. It eliminates the need for multiple, expensive tools and the headaches of managing them. Forget wrangling conflicting data and building custom integrations. Essembi brings your entire team together on a single, customizable platform.
+
+Essembi for Microsoft Teams allows you to:
+- Create Essembi tickets from personal and group chats 
+- Create Essembi tickets from team channels
+- Include existing message subjects and texts in tickets
+- Easily share new tickets with colleagues in Microsoft Teams
+
+Once tickets are created, you can log into Essembi to plan roadmaps, customize agile workflows, manage sprints, and more!
+
+In order to use this app. Users must have an active Essembi account, please [contact](https://essembi.com/pages/support) our support team for more details.
+
+Essembi for Microsoft Teams [Help](https://essembi.com/blogs/help/microsoft-teams-integration)
+[Get Started](https://go.essembi.ai) with Essembi
+[Contact](https://essembi.com/pages/contact) Essembi

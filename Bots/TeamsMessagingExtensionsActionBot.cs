@@ -5,9 +5,11 @@ using Microsoft.Bot.Builder.Teams;
 using Microsoft.Bot.Schema;
 using Microsoft.Bot.Schema.Teams;
 using Microsoft.Extensions.Configuration;
+using Newtonsoft.Json.Linq;
 using RestSharp;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
@@ -28,6 +30,8 @@ namespace Essembi.Integrations.Teams.Bots
             _teamsKey = configuration["TeamsIntegrationKey"];
             _userState = userState;
         }
+
+        #region Message / Compose Actions
 
         protected override async Task<MessagingExtensionActionResponse> OnTeamsMessagingExtensionSubmitActionAsync(
             ITurnContext<IInvokeActivity> turnContext, MessagingExtensionAction action, CancellationToken cancellationToken)
@@ -186,6 +190,26 @@ namespace Essembi.Integrations.Teams.Bots
                 return new MessagingExtensionActionResponse();
             }
 
+            string subject = null, body = null;
+            if (action.MessagePayload != null)
+            {
+                subject = action.MessagePayload.Subject;
+                body = action.MessagePayload.Body?.Content;
+
+                if (body != null)
+                {
+                    //-- Remove the HTML tags.
+                    var doc = new HtmlAgilityPack.HtmlDocument();
+                    doc.LoadHtml(body);
+                    body = doc.DocumentNode.InnerText;
+                }
+            }
+
+            return await CreateTicket(turnContext, cancellationToken, subject, body);
+        }
+
+        private async Task<MessagingExtensionActionResponse> CreateTicket(ITurnContext turnContext, CancellationToken cancellationToken, string subject = null, string body = null)
+        {
             TeamsChannelAccount member;
             try
             {
@@ -243,21 +267,6 @@ namespace Essembi.Integrations.Teams.Bots
             if (deserialized == null)
             {
                 return ErrorMessage("An unexpected error occurred. Please try again later. Contact Essembi support if this problem persists.");
-            }
-
-            string subject = null, body = null;
-            if (action.MessagePayload != null)
-            {
-                subject = action.MessagePayload.Subject;
-                body = action.MessagePayload.Body?.Content;
-
-                if (body != null)
-                {                    
-                    //-- Remove the HTML tags.
-                    var doc = new HtmlAgilityPack.HtmlDocument();
-                    doc.LoadHtml(body);
-                    body = doc.DocumentNode.InnerText;
-                }
             }
 
             if (deserialized.Apps == null || deserialized.Apps.Length == 0)
@@ -342,6 +351,115 @@ namespace Essembi.Integrations.Teams.Bots
             };
         }
 
+        #endregion
+
+        #region Scope Message Actions
+
+        protected override async Task OnMessageActivityAsync(ITurnContext<IMessageActivity> turnContext, CancellationToken cancellationToken)
+        {
+            //-- Get the message text.
+            var text = turnContext.Activity.Text?.ToLower() ?? string.Empty;
+            if (text.Contains("help"))
+            {
+                var adaptiveCard = new AdaptiveCard("1.0")
+                {
+                    Body = new List<AdaptiveElement>()
+                    {
+                        new AdaptiveTextBlock
+                        {
+                            Text = "Help",
+                            Weight = AdaptiveTextWeight.Bolder,
+                            Size = AdaptiveTextSize.Large,
+                        },
+                        new AdaptiveTextBlock
+                        {
+                            Text = "I am Essembi for Microsoft Teams. I can create tickets for you in Essembi easily from Teams chats and channels.",
+                            Wrap = true
+                        },
+                        new AdaptiveTextBlock
+                        {
+                            Text = "I can be found under the 'actions and apps' button when composing new messages and under the 'more actions' menu on existing messages. I respond to the 'help' and 'documentation' commands.",
+                            Wrap = true
+                        }
+                    }
+                };
+
+                var attachment = new Attachment
+                {
+                    ContentType = "application/vnd.microsoft.card.adaptive",
+                    Content = adaptiveCard
+                };
+
+                await turnContext.SendActivityAsync(MessageFactory.Attachment(attachment), cancellationToken);
+            }
+            else if (text.Contains("doc"))
+            {
+                var adaptiveCard = new AdaptiveCard("1.0")
+                {
+                    Body = new List<AdaptiveElement>()
+                    {
+                        new AdaptiveTextBlock
+                        {
+                            Text = "Documentation",
+                            Weight = AdaptiveTextWeight.Bolder,
+                            Size = AdaptiveTextSize.Large,
+                        },
+                        new AdaptiveTextBlock
+                        {
+                            Text = "Learn more about Essembi for Microsoft Teams by navigating to our help documentation with the button below.",
+                            Wrap = true
+                        }
+                    },
+                    Actions = new List<AdaptiveAction>()
+                    {
+                        new AdaptiveOpenUrlAction
+                        {
+                            Title = "Learn more on essembi.com",
+                            Url = new Uri("https://essembi.com/blogs/help/microsoft-teams-integration")
+                        }
+                    }
+                };
+
+                var attachment = new Attachment
+                {
+                    ContentType = "application/vnd.microsoft.card.adaptive",
+                    Content = adaptiveCard
+                };
+
+                await turnContext.SendActivityAsync(MessageFactory.Attachment(attachment), cancellationToken);
+            }
+            else
+            {
+                //-- Suggesst the help or documentation actions.
+                var heroCard = new HeroCard
+                {
+                    Title = "Unknown Command",
+                    Subtitle = "I'm sorry. I do not recognize this command. Here are the commands that I currently recognize.",
+                    Buttons = new List<CardAction>
+                    {
+                        new CardAction
+                        {
+                            Type = ActionTypes.MessageBack,
+                            Title = "Documentation",
+                            Text = "doc"
+                        },
+                        new CardAction
+                        {
+                            Type = ActionTypes.MessageBack,
+                            Title = "Help",
+                            Text = "help"
+                        }
+                    }
+                };
+
+                await turnContext.SendActivityAsync(MessageFactory.Attachment(heroCard.ToAttachment()), cancellationToken);
+            }
+        }
+
+        #endregion
+
+        #region Welcome Message
+
         async Task SendWelcomeCard(ITurnContext turnContext, CancellationToken cancellationToken)
         {
             var adaptiveCard = new AdaptiveCard("1.0")
@@ -361,7 +479,7 @@ namespace Essembi.Integrations.Teams.Bots
                     },
                     new AdaptiveTextBlock
                     {
-                        Text = "I can be found under the 'actions and apps' button when composing new messages and under the 'more actions' menu on existing messages.",
+                        Text = "I can be found under the 'actions and apps' button when composing new messages and under the 'more actions' menu on existing messages. I respond to the 'help' and 'documentation' commands.",
                         Wrap = true
                     },
                     new AdaptiveTextBlock
@@ -389,18 +507,6 @@ namespace Essembi.Integrations.Teams.Bots
             await turnContext.SendActivityAsync(MessageFactory.Attachment(attachment), cancellationToken);
         }
 
-        protected override async Task OnMessageActivityAsync(ITurnContext<IMessageActivity> turnContext, CancellationToken cancellationToken)
-        {
-            //-- Only respond if the bot is sent the message directly.
-            if (turnContext.Activity.Conversation.IsGroup == true)
-            {
-                return;
-            }
-
-            //-- Greet the user and share the documentation with them.
-            await SendWelcomeCard(turnContext, cancellationToken);
-        }
-
         protected override async Task OnMembersAddedAsync(IList<ChannelAccount> membersAdded, ITurnContext<IConversationUpdateActivity> turnContext, CancellationToken cancellationToken)
         {
             foreach (var member in turnContext.Activity.MembersAdded)
@@ -411,6 +517,8 @@ namespace Essembi.Integrations.Teams.Bots
                 }
             }
         }
+
+        #endregion
 
         #region Utility Functions
 
@@ -428,21 +536,21 @@ namespace Essembi.Integrations.Teams.Bots
                             Content = new AdaptiveCard("1.0")
                             {
                                 Body = new List<AdaptiveElement>()
-                                        {
-                                            new AdaptiveTextBlock
-                                            {
-                                                Text = message,
-                                                Wrap = true
-                                            }
-                                        },
+                                {
+                                    new AdaptiveTextBlock
+                                    {
+                                        Text = message,
+                                        Wrap = true
+                                    }
+                                },
                                 Actions = new List<AdaptiveAction>()
-                                        {
-                                            new AdaptiveOpenUrlAction
-                                            {
-                                                Title = "Contact Support",
-                                                Url = new Uri("https://essembi.com/pages/support")
-                                            }
-                                        }
+                                {
+                                    new AdaptiveOpenUrlAction
+                                    {
+                                        Title = "Contact Support",
+                                        Url = new Uri("https://essembi.com/pages/support")
+                                    }
+                                }
                             }
                         },
                         Height = "small",
