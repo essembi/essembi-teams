@@ -199,46 +199,31 @@ namespace Essembi.Integrations.Teams.Bots
                 if (body != null)
                 {
                     //-- Remove the HTML tags.
-                    var doc = new HtmlAgilityPack.HtmlDocument();
-                    doc.LoadHtml(body);
-                    body = doc.DocumentNode.InnerText;
+                    body = RemoveMarkup(body);
                 }
             }
 
             return await CreateTicket(turnContext, cancellationToken, subject, body);
         }
 
+        static string RemoveMarkup(string text)
+        {
+            //-- Remove the HTML tags.
+            var doc = new HtmlAgilityPack.HtmlDocument();
+            doc.LoadHtml(text);
+            text = doc.DocumentNode.InnerText;
+            return text;
+        }
+
         private async Task<MessagingExtensionActionResponse> CreateTicket(ITurnContext turnContext, CancellationToken cancellationToken, string subject = null, string body = null)
         {
-            TeamsChannelAccount member;
-            try
+            var email = await GetEmail(turnContext, cancellationToken);
+            if (email.response != null)
             {
-                //-- Get member information.
-                member = await TeamsInfo.GetMemberAsync(turnContext, turnContext.Activity.From.Id, cancellationToken);
+                return email.response;
             }
-            catch (ErrorResponseException ex)
-            {
-                if (ex.Body.Error.Code == "BotNotInConversationRoster" || ex.Response.StatusCode == System.Net.HttpStatusCode.Forbidden)
-                {
-                    //-- The bot is not in the conversation roster.
-                    return new MessagingExtensionActionResponse
-                    {
-                        Task = new TaskModuleContinueResponse
-                        {
-                            Value = new TaskModuleTaskInfo
-                            {
-                                Card = GetAdaptiveCardAttachmentFromFile("justintimeinstallation.json"),
-                                Height = 200,
-                                Width = 400,
-                                Title = "Adaptive Card - App Installation",
-                            },
-                        },
-                    };
-                }
 
-                //-- It's a different error.
-                throw;
-            }
+            var member = email.account;
 
             using var client = MakeRequest("Integrations/MSTeams/Authenticate", out var request);
 
@@ -351,6 +336,41 @@ namespace Essembi.Integrations.Teams.Bots
             };
         }
 
+        private static async Task<(MessagingExtensionActionResponse response, TeamsChannelAccount account)> GetEmail(ITurnContext turnContext, CancellationToken cancellationToken)
+        {
+            try
+            {
+                //-- Get member information.
+                var member = await TeamsInfo.GetMemberAsync(turnContext, turnContext.Activity.From.Id, cancellationToken);
+                return (null, member);
+            }
+            catch (ErrorResponseException ex)
+            {
+                if (ex.Body.Error.Code == "BotNotInConversationRoster" || ex.Response.StatusCode == System.Net.HttpStatusCode.Forbidden)
+                {
+                    //-- The bot is not in the conversation roster.
+                    var resp = new MessagingExtensionActionResponse
+                    {
+                        Task = new TaskModuleContinueResponse
+                        {
+                            Value = new TaskModuleTaskInfo
+                            {
+                                Card = GetAdaptiveCardAttachmentFromFile("justintimeinstallation.json"),
+                                Height = 200,
+                                Width = 400,
+                                Title = "Adaptive Card - App Installation",
+                            },
+                        },
+                    };
+
+                    return (resp, null);
+                }
+
+                //-- It's a different error.
+                throw;
+            }
+        }
+
         #endregion
 
         #region Scope Message Actions
@@ -358,8 +378,114 @@ namespace Essembi.Integrations.Teams.Bots
         protected override async Task OnMessageActivityAsync(ITurnContext<IMessageActivity> turnContext, CancellationToken cancellationToken)
         {
             //-- Get the message text.
-            var text = turnContext.Activity.Text?.ToLower() ?? string.Empty;
-            if (text.Contains("help"))
+            var text = RemoveMarkup(turnContext.Activity.Text?.Trim() ?? string.Empty);
+            var lowerText = text.ToLowerInvariant();
+
+            //-- Trim off the @-message in group texts and channels.
+            if (lowerText.StartsWith('@'))
+            {
+                text = text.Substring(1).Trim();
+                lowerText = lowerText.Substring(1).Trim();
+            }
+
+            if (lowerText.StartsWith("essembi", StringComparison.InvariantCulture))
+            {
+                text = text.Substring(7).Trim();
+                lowerText = lowerText.Substring(7).Trim();
+            }
+
+            if (lowerText.StartsWith("search", StringComparison.InvariantCulture))
+            {
+                var email = await GetEmail(turnContext, cancellationToken);
+                if (email.response != null)
+                {
+                    //-- This should never happen. Return error message.
+                    await turnContext.SendActivityAsync(
+                        MessageFactory.Text($"The search failed because the bot is not present in this channel or conversation."), cancellationToken);
+                    return;
+                }
+
+                //-- Sanitize the search string.
+                var query = text.Substring(6).Trim();
+                if(string.IsNullOrEmpty(query))
+                {
+                    //-- Return an error message.
+                    await turnContext.SendActivityAsync(
+                        MessageFactory.Text($"No search query was provided. Please provide a search query after the search command: `search <search terms here>`."), cancellationToken);
+                    return;
+                }
+
+                //-- Set up the request.
+                var requestBody = new SearchFromMSTeamsRequest()
+                {
+                    Email = email.account.Email,
+                    Query = query
+                };
+
+                //-- Send the search string to the API.
+                using var client = MakeRequest("Integrations/MSTeams/Search", out var request);
+
+                //-- Add the request body.
+                request.AddJsonBody(requestBody);
+
+                //-- Execute the request.
+                var response = await client.ExecutePostAsync(request, cancellationToken);
+                if (response.StatusCode == System.Net.HttpStatusCode.OK)
+                {
+                    //-- Report the problem to the user.
+                    SearchFromMSTeamsResults results = null;
+                    if (response.Content != null)
+                    {
+                        results = JsonSerializer.Deserialize<SearchFromMSTeamsResults>(response.Content);
+                    }
+
+                    if (results == null || results.Results == null || results.Results.Length == 0)
+                    {
+                        //-- Return the message that no results were attained.
+                        await turnContext.SendActivityAsync(
+                            MessageFactory.Text($"No search results were found for '{query}'..."), cancellationToken);
+                        return;
+                    }
+
+                    var adaptiveCard = new AdaptiveCard("1.2")
+                    {
+                        Body = new List<AdaptiveElement>()
+                        {
+                            new AdaptiveTextBlock
+                            {
+                                Text = $"Top search results for '{query}'...",
+                                Weight = AdaptiveTextWeight.Bolder,
+                                Size = AdaptiveTextSize.Large,
+                            }
+                        }
+                    };
+
+                    foreach (var res in results.Results) 
+                    { 
+                        adaptiveCard.Body.Add(new AdaptiveTextBlock
+                        {
+                            Text = $"**{res.Table}**: {res.Name} [(Open in Essembi)]({res.Url})",
+                            Wrap = true
+                        });
+                    }
+
+                    var attachment = new Attachment
+                    {
+                        ContentType = "application/vnd.microsoft.card.adaptive",
+                        Content = adaptiveCard
+                    };
+
+                    await turnContext.SendActivityAsync(MessageFactory.Attachment(attachment), cancellationToken);
+                }
+                else
+                {
+                    //-- Return an error message.
+                    await turnContext.SendActivityAsync(
+                        MessageFactory.Text($"Authentication with Essembi failed. If you do not have an Essembi account you can register at essembi.com."), cancellationToken);
+                }
+
+            }
+            else if (lowerText.Contains("help"))
             {
                 var adaptiveCard = new AdaptiveCard("1.0")
                 {
@@ -378,7 +504,7 @@ namespace Essembi.Integrations.Teams.Bots
                         },
                         new AdaptiveTextBlock
                         {
-                            Text = "I can be found under the 'actions and apps' button when composing new messages and under the 'more actions' menu on existing messages. I respond to the 'help' and 'documentation' commands.",
+                            Text = "I can be found under the 'actions and apps' button when composing new messages and under the 'more actions' menu on existing messages. I respond to the 'search', 'help' and 'documentation' commands.",
                             Wrap = true
                         }
                     }
@@ -392,7 +518,7 @@ namespace Essembi.Integrations.Teams.Bots
 
                 await turnContext.SendActivityAsync(MessageFactory.Attachment(attachment), cancellationToken);
             }
-            else if (text.Contains("doc"))
+            else if (lowerText.Contains("doc"))
             {
                 var adaptiveCard = new AdaptiveCard("1.0")
                 {
@@ -448,7 +574,13 @@ namespace Essembi.Integrations.Teams.Bots
                             Type = ActionTypes.MessageBack,
                             Title = "Help",
                             Text = "help"
-                        }
+                        },
+                        new CardAction
+                        {
+                            Type = ActionTypes.MessageBack,
+                            Title = "Search",
+                            Text = $"search {text}"
+                        },
                     }
                 };
 
