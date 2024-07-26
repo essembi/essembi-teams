@@ -5,13 +5,12 @@ using Microsoft.Bot.Builder.Teams;
 using Microsoft.Bot.Schema;
 using Microsoft.Bot.Schema.Teams;
 using Microsoft.Extensions.Configuration;
-using Newtonsoft.Json.Linq;
 using RestSharp;
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -342,11 +341,13 @@ namespace Essembi.Integrations.Teams.Bots
             {
                 //-- Get member information.
                 var member = await TeamsInfo.GetMemberAsync(turnContext, turnContext.Activity.From.Id, cancellationToken);
+
                 return (null, member);
             }
             catch (ErrorResponseException ex)
             {
-                if (ex.Body.Error.Code == "BotNotInConversationRoster" || ex.Response.StatusCode == System.Net.HttpStatusCode.Forbidden)
+                if (ex.Body.Error.Code == "BotNotInConversationRoster" || 
+                    ex.Response.StatusCode == System.Net.HttpStatusCode.Forbidden)
                 {
                     //-- The bot is not in the conversation roster.
                     var resp = new MessagingExtensionActionResponse
@@ -358,13 +359,54 @@ namespace Essembi.Integrations.Teams.Bots
                                 Card = GetAdaptiveCardAttachmentFromFile("justintimeinstallation.json"),
                                 Height = 200,
                                 Width = 400,
-                                Title = "Adaptive Card - App Installation",
+                                Title = "App Installation",
                             },
                         },
                     };
 
                     return (resp, null);
                 }
+                else if (ex.Response.StatusCode == System.Net.HttpStatusCode.BadRequest)
+                {
+                    //-- There is a bug in teams where you can not use GetMemberAsync until the bot has been added to a chat or channel.
+                    //-- This means that ticket submission can not be used in a 1:1 chat (with the bot specifically) until the bot has been added to a chat or channel.
+                    var resp = new MessagingExtensionActionResponse
+                    {
+                        Task = new TaskModuleContinueResponse
+                        {
+                            Value = new TaskModuleTaskInfo
+                            {
+                                Card = GetAdaptiveCardAttachmentFromFile("botnotready.json"),
+                                Height = 200,
+                                Width = 400,
+                                Title = "Add Bot to Chat or Channel",
+                            },
+                        },
+                    };
+
+                    return (resp, null);
+                }
+
+                //-- Log some additional information to go along with the exception in the error log.
+                Console.WriteLine($"{ex.GetType()}: {ex.Message} -- {ex.Response.Content}");
+                if (ex.InnerException != null)
+                {
+                    Console.WriteLine($"{ex.InnerException.GetType()}: {ex.InnerException.Message}");
+                }
+
+                var sb = new StringBuilder();
+                sb.Append("Role: ").AppendLine(turnContext.Activity.From.Role);
+                sb.Append("Name: ").AppendLine(turnContext.Activity.From.Name);
+                sb.Append("Id: ").AppendLine(turnContext.Activity.From.Id);
+                if (turnContext.Activity.From.Properties != null)
+                {
+                    foreach (var prop in turnContext.Activity.From.Properties)
+                    {
+                        sb.Append("Properties.").Append(prop.Key).Append(": ").AppendLine(prop.Value?.ToString());
+                    }
+                }
+
+                Console.WriteLine(sb.ToString());
 
                 //-- It's a different error.
                 throw;

@@ -1,0 +1,11 @@
+{
+  "type": "AdaptiveCard",
+  "body": [
+    {
+      "type": "TextBlock",
+      "text": "This action can not be used until this bot has been added to a chat or channel. Please add this bot to a chat or channel and right click on a message that has been sent by a team member to select this option from there.",
+      "wrap": true
+    }
+  ],
+  "version": "1.0"
+}

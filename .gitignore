@@ -8,3 +8,4 @@
 /Properties/PublishProfiles
 /Properties/ServiceDependencies/essembi-teams-bot - Web Deploy
 /Properties/ServiceDependencies/essembi-teams-bot - Zip Deploy/profile.arm.json
+/Properties/ServiceDependencies/essembi-teams-bot - FTP/profile.arm.json
